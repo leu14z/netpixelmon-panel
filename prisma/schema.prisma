@@ -231,3 +231,39 @@ model PublicKey {
 
   @@index([entityId])
 }
+
+model SupportMessage {
+  id         String   @id @default(uuid())
+  roomCode   String
+  senderName String
+  isStaff    Boolean  @default(false)
+  text       String
+  createdAt  DateTime @default(now())
+
+  @@index([roomCode])
+  @@index([createdAt])
+}
+
+model SupportSignal {
+  id         String   @id @default(uuid())
+  roomCode   String
+  senderType String   // "STAFF" or "PLAYER"
+  signalType String   // "offer", "answer", "candidate", "stop"
+  payload    String   // JSON string
+  createdAt  DateTime @default(now())
+
+  @@index([roomCode])
+  @@index([createdAt])
+}
+
+model SupportPresence {
+  id         String   @id @default(uuid())
+  roomCode   String
+  clientType String   // "STAFF" or "PLAYER"
+  nick       String
+  lastSeenAt DateTime @default(now())
+
+  @@unique([roomCode, clientType])
+  @@index([roomCode])
+}
+
