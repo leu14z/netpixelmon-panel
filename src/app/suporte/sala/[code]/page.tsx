@@ -15,9 +15,11 @@ import {
   Check,
   ArrowLeft,
   Maximize2,
-  Users,
-  Video,
+  Volume2,
+  VolumeX,
   StopCircle,
+  CheckCircle2,
+  RotateCcw,
 } from "lucide-react";
 
 interface ChatMessage {
@@ -28,12 +30,15 @@ interface ChatMessage {
   createdAt: string;
 }
 
-const ICE_SERVERS = {
+const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
     { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:stun3.l.google.com:19302" },
+    { urls: "stun:stun4.l.google.com:19302" },
   ],
+  iceCandidatePoolSize: 10,
 };
 
 export default function SupportRoomPage() {
@@ -41,9 +46,16 @@ export default function SupportRoomPage() {
   const router = useRouter();
   const code = params?.code as string;
 
+  // ID único desta aba no navegador
+  const peerIdRef = useRef<string>("");
+  if (!peerIdRef.current) {
+    peerIdRef.current = `peer_${Math.random().toString(36).substring(2, 9)}`;
+  }
+
   const [roomData, setRoomData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isRoomClosed, setIsRoomClosed] = useState(false);
 
   // Identidade do usuário atual na sala
   const [clientRole, setClientRole] = useState<"STAFF" | "PLAYER">("PLAYER");
@@ -64,14 +76,15 @@ export default function SupportRoomPage() {
 
   // Vídeo e Transmissão
   const [isSharing, setIsSharing] = useState(false);
-  const [shareType, setShareType] = useState<"screen" | "camera" | null>(null);
   const [hasRemoteStream, setHasRemoteStream] = useState(false);
+  const [isAudioMuted, setIsAudioMuted] = useState(true);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const lastSignalTimeRef = useRef<string>(new Date(Date.now() - 5000).toISOString());
+  const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
 
   // Chat
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -81,7 +94,7 @@ export default function SupportRoomPage() {
   const [mobileTab, setMobileTab] = useState<"video" | "chat">("video");
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
-  // 1. Carregar Informações Iniciais da Sala e Determinar Cargo (Staff vs Jogador)
+  // 1. Carregar dados da sala e autenticação
   useEffect(() => {
     if (!code) return;
 
@@ -91,13 +104,16 @@ export default function SupportRoomPage() {
         return res.json();
       })
       .then(async (data) => {
+        if (data.room.status === "CLOSED") {
+          setIsRoomClosed(true);
+        }
         setRoomData(data.room);
 
-        // Verifica se quem está acessando é a staff autenticada
+        // Checa se quem acessou é a Staff autenticada
         try {
           const authRes = await fetch("/api/user/profile");
           const authData = await authRes.json();
-          if (authData.user && authData.user.id === data.room.staffId) {
+          if (authData.user) {
             setClientRole("STAFF");
             setMyNick(authData.user.username);
             return;
@@ -115,9 +131,9 @@ export default function SupportRoomPage() {
       });
   }, [code]);
 
-  // 2. Loop de Presença (Heartbeat a cada 3s)
+  // 2. Loop de Presença / Heartbeat a cada 3s
   useEffect(() => {
-    if (!code || !myNick) return;
+    if (!code || isRoomClosed) return;
 
     const sendHeartbeat = () => {
       fetch("/api/support/signal", {
@@ -125,7 +141,8 @@ export default function SupportRoomPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           roomCode: code,
-          senderType: clientRole,
+          senderId: peerIdRef.current,
+          senderRole: clientRole,
           signalType: "heartbeat",
           nick: myNick,
         }),
@@ -135,11 +152,11 @@ export default function SupportRoomPage() {
     sendHeartbeat();
     const interval = setInterval(sendHeartbeat, 3000);
     return () => clearInterval(interval);
-  }, [code, clientRole, myNick]);
+  }, [code, clientRole, myNick, isRoomClosed]);
 
-  // 3. Loop de Sincronização de Chat em Tempo Real (a cada 1.5s)
+  // 3. Loop de Sincronização do Chat a cada 1.5s
   useEffect(() => {
-    if (!code) return;
+    if (!code || isRoomClosed) return;
 
     const fetchMessages = async () => {
       try {
@@ -154,20 +171,20 @@ export default function SupportRoomPage() {
     fetchMessages();
     const interval = setInterval(fetchMessages, 1500);
     return () => clearInterval(interval);
-  }, [code]);
+  }, [code, isRoomClosed]);
 
-  // Auto-scroll para última mensagem
+  // Auto-scroll das mensagens
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 4. Inicialização de Peer Connection WebRTC
-  const createPeerConnection = () => {
+  // 4. Criação e Configuração do RTCPeerConnection
+  const getOrCreatePeerConnection = () => {
     if (peerConnectionRef.current) return peerConnectionRef.current;
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
-    // Quando o ICE candidate for gerado, envia para o outro participante
+    // Candidatos ICE
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         fetch("/api/support/signal", {
@@ -175,7 +192,8 @@ export default function SupportRoomPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             roomCode: code,
-            senderType: clientRole,
+            senderId: peerIdRef.current,
+            senderRole: clientRole,
             signalType: "candidate",
             payload: JSON.stringify(event.candidate),
           }),
@@ -183,11 +201,19 @@ export default function SupportRoomPage() {
       }
     };
 
-    // Quando receber a track de vídeo do outro participante
+    // Recebimento da faixa de vídeo remota
     pc.ontrack = (event) => {
       if (remoteVideoRef.current && event.streams[0]) {
         remoteVideoRef.current.srcObject = event.streams[0];
-        setHasRemoteStream(true);
+        remoteVideoRef.current.muted = true; // Obrigatório para navegadores permitirem autoplay
+        remoteVideoRef.current
+          .play()
+          .then(() => {
+            setHasRemoteStream(true);
+          })
+          .catch(() => {
+            setHasRemoteStream(true);
+          });
       }
     };
 
@@ -201,18 +227,25 @@ export default function SupportRoomPage() {
     return pc;
   };
 
-  // 5. Polling de Sinais WebRTC (Offer, Answer, Candidates)
+  // 5. Polling de Sinais WebRTC e Status da Sala
   useEffect(() => {
-    if (!code) return;
+    if (!code || isRoomClosed) return;
 
     const pollSignals = async () => {
       try {
         const res = await fetch(
-          `/api/support/signal?code=${code}&forType=${clientRole}&after=${encodeURIComponent(
+          `/api/support/signal?code=${code}&peerId=${peerIdRef.current}&after=${encodeURIComponent(
             lastSignalTimeRef.current
           )}`
         );
         const data = await res.json();
+
+        // Se a sala foi fechada por alguém
+        if (data.roomClosed) {
+          handleCleanupStreams();
+          setIsRoomClosed(true);
+          return;
+        }
 
         if (data.presence) {
           setPresence(data.presence);
@@ -222,10 +255,27 @@ export default function SupportRoomPage() {
           for (const sig of data.signals) {
             lastSignalTimeRef.current = sig.createdAt;
 
+            if (sig.signalType === "room_closed") {
+              handleCleanupStreams();
+              setIsRoomClosed(true);
+              return;
+            }
+
             if (sig.signalType === "offer") {
-              const pc = createPeerConnection();
+              const pc = getOrCreatePeerConnection();
+
+              // Garante transceivers para receber áudio e vídeo
+              pc.addTransceiver("video", { direction: "recvonly" });
+              pc.addTransceiver("audio", { direction: "recvonly" });
+
               const offerDesc = new RTCSessionDescription(JSON.parse(sig.payload));
               await pc.setRemoteDescription(offerDesc);
+
+              // Processa candidatos que chegaram antes da oferta
+              while (pendingCandidatesRef.current.length > 0) {
+                const cand = pendingCandidatesRef.current.shift();
+                if (cand) await pc.addIceCandidate(new RTCIceCandidate(cand));
+              }
 
               const answer = await pc.createAnswer();
               await pc.setLocalDescription(answer);
@@ -235,7 +285,8 @@ export default function SupportRoomPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   roomCode: code,
-                  senderType: clientRole,
+                  senderId: peerIdRef.current,
+                  senderRole: clientRole,
                   signalType: "answer",
                   payload: JSON.stringify(answer),
                 }),
@@ -244,13 +295,22 @@ export default function SupportRoomPage() {
               if (peerConnectionRef.current) {
                 const answerDesc = new RTCSessionDescription(JSON.parse(sig.payload));
                 await peerConnectionRef.current.setRemoteDescription(answerDesc);
+
+                while (pendingCandidatesRef.current.length > 0) {
+                  const cand = pendingCandidatesRef.current.shift();
+                  if (cand) await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(cand));
+                }
               }
             } else if (sig.signalType === "candidate") {
-              if (peerConnectionRef.current && sig.payload) {
-                try {
-                  const candidate = new RTCIceCandidate(JSON.parse(sig.payload));
-                  await peerConnectionRef.current.addIceCandidate(candidate);
-                } catch {}
+              if (sig.payload) {
+                const candData = JSON.parse(sig.payload);
+                if (peerConnectionRef.current && peerConnectionRef.current.remoteDescription) {
+                  try {
+                    await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candData));
+                  } catch {}
+                } else {
+                  pendingCandidatesRef.current.push(candData);
+                }
               }
             } else if (sig.signalType === "stop") {
               if (remoteVideoRef.current) {
@@ -265,28 +325,34 @@ export default function SupportRoomPage() {
 
     const interval = setInterval(pollSignals, 1000);
     return () => clearInterval(interval);
-  }, [code, clientRole]);
+  }, [code, clientRole, isRoomClosed]);
 
   // 6. Iniciar Compartilhamento de Tela (PC)
   const handleStartScreenShare = async () => {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: "monitor" },
+        video: {
+          displaySurface: "monitor",
+          frameRate: { ideal: 30, max: 60 },
+        },
         audio: true,
       });
 
       localStreamRef.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
+        localVideoRef.current.play().catch(() => {});
       }
 
       setIsSharing(true);
-      setShareType("screen");
 
-      const pc = createPeerConnection();
+      const pc = getOrCreatePeerConnection();
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-      const offer = await pc.createOffer();
+      const offer = await pc.createOffer({
+        offerToReceiveVideo: true,
+        offerToReceiveAudio: true,
+      });
       await pc.setLocalDescription(offer);
 
       await fetch("/api/support/signal", {
@@ -294,7 +360,8 @@ export default function SupportRoomPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           roomCode: code,
-          senderType: clientRole,
+          senderId: peerIdRef.current,
+          senderRole: clientRole,
           signalType: "offer",
           payload: JSON.stringify(offer),
         }),
@@ -305,12 +372,12 @@ export default function SupportRoomPage() {
       };
     } catch (err: any) {
       if (err.name !== "NotAllowedError") {
-        alert("Não foi possível capturar a tela. Verifique as permissões.");
+        alert("Não foi possível capturar a tela. Verifique as permissões do seu navegador.");
       }
     }
   };
 
-  // 7. Iniciar Câmera (Ideal para Celular apontando para o PC ou webcam)
+  // 7. Iniciar Câmera (Celular ou Webcam)
   const handleStartCameraShare = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -321,15 +388,18 @@ export default function SupportRoomPage() {
       localStreamRef.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
+        localVideoRef.current.play().catch(() => {});
       }
 
       setIsSharing(true);
-      setShareType("camera");
 
-      const pc = createPeerConnection();
+      const pc = getOrCreatePeerConnection();
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-      const offer = await pc.createOffer();
+      const offer = await pc.createOffer({
+        offerToReceiveVideo: true,
+        offerToReceiveAudio: true,
+      });
       await pc.setLocalDescription(offer);
 
       await fetch("/api/support/signal", {
@@ -337,7 +407,8 @@ export default function SupportRoomPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           roomCode: code,
-          senderType: clientRole,
+          senderId: peerIdRef.current,
+          senderRole: clientRole,
           signalType: "offer",
           payload: JSON.stringify(offer),
         }),
@@ -349,6 +420,22 @@ export default function SupportRoomPage() {
 
   // 8. Parar Transmissão
   const handleStopShare = () => {
+    handleCleanupStreams();
+    setIsSharing(false);
+
+    fetch("/api/support/signal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        roomCode: code,
+        senderId: peerIdRef.current,
+        senderRole: clientRole,
+        signalType: "stop",
+      }),
+    }).catch(() => {});
+  };
+
+  const handleCleanupStreams = () => {
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
@@ -356,18 +443,14 @@ export default function SupportRoomPage() {
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = null;
     }
-    setIsSharing(false);
-    setShareType(null);
-
-    fetch("/api/support/signal", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        roomCode: code,
-        senderType: clientRole,
-        signalType: "stop",
-      }),
-    }).catch(() => {});
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    setHasRemoteStream(false);
   };
 
   // 9. Enviar Mensagem no Chat
@@ -391,7 +474,6 @@ export default function SupportRoomPage() {
         }),
       });
 
-      // Recarrega imediatamente
       const res = await fetch(`/api/support/chat?code=${code}`);
       const data = await res.json();
       if (data.messages) setMessages(data.messages);
@@ -401,18 +483,32 @@ export default function SupportRoomPage() {
     }
   };
 
-  // 10. Encerrar Atendimento
+  // 10. Encerrar Sala de Atendimento (Comunicação para todos)
   const handleCloseRoom = async () => {
-    if (!confirm("Deseja finalizar esta sala de atendimento?")) return;
-    handleStopShare();
+    if (!confirm("Deseja realmente finalizar esta sala de atendimento para todos?")) return;
 
+    handleCleanupStreams();
+
+    // 1. Envia sinal de finalização para os outros participantes
+    await fetch("/api/support/signal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        roomCode: code,
+        senderId: peerIdRef.current,
+        senderRole: "STAFF",
+        signalType: "room_closed",
+      }),
+    });
+
+    // 2. Atualiza no banco
     await fetch("/api/support/room", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code, notes: "Atendimento concluído via tela ao vivo." }),
     });
 
-    router.push("/dashboard/suporte");
+    setIsRoomClosed(true);
   };
 
   const copyRoomLink = () => {
@@ -421,11 +517,59 @@ export default function SupportRoomPage() {
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
+  const toggleAudio = () => {
+    if (remoteVideoRef.current) {
+      const nextMuted = !remoteVideoRef.current.muted;
+      remoteVideoRef.current.muted = nextMuted;
+      setIsAudioMuted(nextMuted);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#1E1F22] text-[#949BA4] flex items-center justify-center text-xs">
         <span className="w-5 h-5 border-2 border-[#5865F2]/30 border-t-[#5865F2] rounded-full animate-spin mr-2" />
-        Carregando sala de atendimento...
+        Carregando sala de suporte...
+      </div>
+    );
+  }
+
+  // TELA QUANDO A SALA FOR ENCERRADA (Para Staff e Jogador)
+  if (isRoomClosed) {
+    return (
+      <div className="min-h-screen bg-[#1E1F22] text-[#DBDEE1] flex items-center justify-center p-4 select-none font-sans">
+        <div className="bg-[#2B2D31] border border-[#202225] rounded-xl p-6 sm:p-8 max-w-md w-full text-center space-y-4 shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="w-14 h-14 rounded-full bg-[#23A55A]/20 border border-[#23A55A]/40 text-[#23A55A] flex items-center justify-center mx-auto shadow-lg">
+            <CheckCircle2 className="w-7 h-7" />
+          </div>
+
+          <div className="space-y-1.5">
+            <h2 className="text-lg font-bold text-[#F2F3F5]">Atendimento Finalizado</h2>
+            <p className="text-xs text-[#949BA4] leading-relaxed">
+              Esta sessão de suporte ao vivo foi concluída com sucesso pela equipe do <b>NetPixelmon</b>.
+            </p>
+          </div>
+
+          <div className="p-3 bg-[#1E1F22] rounded-lg border border-[#202225] text-xs text-[#DBDEE1]">
+            Código da Sala: <span className="font-mono font-bold text-[#5865F2]">{code}</span>
+          </div>
+
+          <div className="pt-2">
+            {clientRole === "STAFF" ? (
+              <Link
+                href="/dashboard/suporte"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#5865F2] hover:bg-[#4752C4] text-white text-xs font-semibold rounded-md transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Voltar ao Painel da Staff</span>
+              </Link>
+            ) : (
+              <p className="text-[11px] text-[#949BA4]">
+                Você já pode fechar esta aba no seu navegador. Bom jogo!
+              </p>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
@@ -482,7 +626,7 @@ export default function SupportRoomPage() {
             </div>
           </div>
 
-          {/* Indicadores de Presença (Staff & Jogador) */}
+          {/* Indicadores de Presença */}
           <div className="hidden lg:flex items-center gap-4 text-xs bg-[#1E1F22] px-3 py-1 rounded border border-[#202225]">
             <div className="flex items-center gap-1.5">
               <span
@@ -525,16 +669,17 @@ export default function SupportRoomPage() {
               <button
                 onClick={handleCloseRoom}
                 className="flex items-center gap-1 px-2.5 py-1.5 bg-[#DA373C] hover:bg-[#A12828] text-white rounded text-[11px] font-medium transition-colors"
+                title="Finalizar atendimento para todos"
               >
                 <XCircle className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Finalizar</span>
+                <span className="hidden sm:inline">Finalizar Atendimento</span>
               </button>
             )}
           </div>
         </div>
       </header>
 
-      {/* Seletor de Aba no Mobile (Vídeo vs Chat) */}
+      {/* Seletor Mobile (Vídeo vs Chat) */}
       <div className="md:hidden flex border-b border-[#202225] bg-[#2B2D31] text-xs font-semibold">
         <button
           onClick={() => setMobileTab("video")}
@@ -550,7 +695,7 @@ export default function SupportRoomPage() {
             mobileTab === "chat" ? "border-[#5865F2] text-[#F2F3F5]" : "border-transparent text-[#949BA4]"
           }`}
         >
-          Chat em Tempo Real ({messages.length})
+          Chat ({messages.length})
         </button>
       </div>
 
@@ -563,15 +708,16 @@ export default function SupportRoomPage() {
           }`}
         >
           <div className="flex-1 bg-black rounded-lg border border-[#202225] overflow-hidden relative flex items-center justify-center min-h-[260px] shadow-inner">
-            {/* 1. Vídeo Remoto (Quem está assistindo vê isso) */}
+            {/* 1. Vídeo Remoto (Para quem está assistindo) */}
             <video
               ref={remoteVideoRef}
               autoPlay
               playsInline
+              muted={isAudioMuted}
               className={`w-full h-full object-contain ${hasRemoteStream ? "block" : "hidden"}`}
             />
 
-            {/* 2. Prévia do Vídeo Local (Quem está transmitindo vê isso) */}
+            {/* 2. Prévia do Vídeo Local (Para quem está transmitindo) */}
             <video
               ref={localVideoRef}
               autoPlay
@@ -580,11 +726,32 @@ export default function SupportRoomPage() {
               className={`w-full h-full object-contain ${isSharing && !hasRemoteStream ? "block" : "hidden"}`}
             />
 
-            {/* Selo Ao Vivo quando alguém transmite */}
+            {/* Selo Ao Vivo e Botão de Áudio */}
             {(hasRemoteStream || isSharing) && (
-              <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/70 backdrop-blur-md border border-white/10 text-[10px] font-bold text-white z-10">
-                <span className="w-2 h-2 rounded-full bg-[#DA373C] animate-pulse" />
-                <span>{isSharing ? "VOCÊ ESTÁ TRANSMITINDO" : "TRANSMISSÃO AO VIVO (P2P)"}</span>
+              <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/80 backdrop-blur-md border border-white/10 text-[10px] font-bold text-white pointer-events-auto">
+                  <span className="w-2 h-2 rounded-full bg-[#DA373C] animate-pulse" />
+                  <span>{isSharing ? "VOCÊ ESTÁ TRANSMITINDO" : "TRANSMISSÃO AO VIVO (P2P)"}</span>
+                </div>
+
+                {hasRemoteStream && (
+                  <button
+                    onClick={toggleAudio}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/80 backdrop-blur-md border border-white/10 text-[10px] font-semibold text-white pointer-events-auto hover:bg-black transition-colors"
+                  >
+                    {isAudioMuted ? (
+                      <>
+                        <VolumeX className="w-3.5 h-3.5 text-[#DA373C]" />
+                        <span>Áudio Mutado (Clique para ouvir)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Volume2 className="w-3.5 h-3.5 text-[#23A55A]" />
+                        <span>Áudio Ativo</span>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             )}
 
@@ -595,9 +762,9 @@ export default function SupportRoomPage() {
                   <Monitor className="w-7 h-7" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-sm font-bold text-[#F2F3F5]">Nenhuma Transmissão Ativa</h3>
+                  <h3 className="text-sm font-bold text-[#F2F3F5]">Aguardando Início da Transmissão</h3>
                   <p className="text-xs text-[#949BA4] leading-relaxed">
-                    Você ou o jogador podem iniciar uma transmissão ao vivo abaixo para inspecionar erros no Minecraft ou Launcher.
+                    Você ou a outra pessoa podem iniciar a transmissão abaixo para inspecionar erros no Minecraft ou Launcher.
                   </p>
                 </div>
 
@@ -613,7 +780,7 @@ export default function SupportRoomPage() {
                   <button
                     onClick={handleStartCameraShare}
                     className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-[#4E5058] hover:bg-[#6D6F78] text-[#F2F3F5] text-xs font-semibold rounded-md transition-colors"
-                    title="Ideal para celular apontando para a tela"
+                    title="Ideal para celular apontando para a tela do PC"
                   >
                     <Camera className="w-4 h-4 text-[#23A55A]" />
                     <span>Abrir Câmera (Celular)</span>
@@ -632,7 +799,7 @@ export default function SupportRoomPage() {
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-[#DA373C] hover:bg-[#A12828] text-white rounded text-xs font-semibold transition-colors"
                 >
                   <StopCircle className="w-3.5 h-3.5" />
-                  <span>Parar Transmissão</span>
+                  <span>Parar Minha Transmissão</span>
                 </button>
               ) : (
                 <div className="flex items-center gap-1.5">
@@ -655,7 +822,7 @@ export default function SupportRoomPage() {
             </div>
 
             <div className="flex items-center gap-2 text-[11px] text-[#949BA4]">
-              <span className="hidden sm:inline">P2P WebRTC Conectado</span>
+              <span className="hidden sm:inline">P2P Conectado</span>
               <button
                 onClick={() => {
                   const target = remoteVideoRef.current || localVideoRef.current;
@@ -688,7 +855,7 @@ export default function SupportRoomPage() {
             </span>
           </div>
 
-          {/* Lista de Mensagens com Auto-scroll */}
+          {/* Lista de Mensagens */}
           <div className="flex-1 p-3 overflow-y-auto space-y-3 text-xs">
             {messages.length === 0 ? (
               <div className="text-center text-[#949BA4] text-[11px] py-10">
@@ -729,7 +896,7 @@ export default function SupportRoomPage() {
             <div ref={chatBottomRef} />
           </div>
 
-          {/* Campo de Envio de Mensagem */}
+          {/* Input de Envio de Mensagem */}
           <form onSubmit={handleSendMessage} className="p-3 border-t border-[#202225] bg-[#232428] flex items-center gap-2">
             <input
               type="text"
