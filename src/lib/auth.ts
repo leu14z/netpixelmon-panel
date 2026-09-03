@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { db } from "./db";
 import { env } from "./env";
@@ -94,9 +95,9 @@ export async function createAuthSession(
 }
 
 /**
- * VERIFICAR SESSÃO SERVER-SIDE (Auth Server Side)
+ * VERIFICAR SESSÃO SERVER-SIDE (Auth Server Side) - Deduplicado via React Cache
  */
-export async function getAuthSession(): Promise<AuthSessionPayload | null> {
+export const getAuthSession = cache(async (): Promise<AuthSessionPayload | null> => {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
@@ -127,7 +128,7 @@ export async function getAuthSession(): Promise<AuthSessionPayload | null> {
   } catch {
     return null;
   }
-}
+});
 
 /**
  * REVOGAR SESSÃO E LIMPAR COOKIE
