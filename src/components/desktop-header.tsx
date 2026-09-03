@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Play, Square, Users, Check, AlertCircle } from "lucide-react";
+import Image from "next/image";
+import { Play, Square, Users, Check, AlertCircle, Menu } from "lucide-react";
 
 interface DesktopHeaderProps {
   user: {
@@ -112,7 +113,7 @@ export function DesktopHeader({ user }: DesktopHeaderProps) {
   };
 
   return (
-    <header className="h-14 border-b border-[#202225] bg-[#313338] px-5 flex items-center justify-between sticky top-0 z-40 select-none">
+    <header className="h-14 border-b border-[#202225] bg-[#313338] px-3 sm:px-5 flex items-center justify-between sticky top-0 z-40 select-none">
       {/* Toast Notifier */}
       {toastMsg && (
         <div
@@ -127,25 +128,48 @@ export function DesktopHeader({ user }: DesktopHeaderProps) {
         </div>
       )}
 
-      {/* Identificação de Servidor */}
+      {/* Esquerda: Botão Menu Mobile + Servidor */}
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#2B2D31] text-xs text-[#DBDEE1]">
-          <span className="text-[#949BA4] text-[11px]">Servidor Ativo:</span>
+        {/* Botão Hambúrguer no Celular */}
+        <button
+          onClick={() => window.dispatchEvent(new Event("toggle-mobile-sidebar"))}
+          className="md:hidden p-1.5 -ml-1 text-[#949BA4] hover:text-[#F2F3F5] rounded-md transition-colors"
+          title="Abrir Menu"
+          aria-label="Abrir Menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+
+        {/* Mascote no mobile */}
+        <div className="md:hidden w-7 h-7 rounded-full bg-[#1E1F22] p-0.5 flex items-center justify-center shrink-0 border border-[#383A40]">
+          <Image
+            src="/mascot.png"
+            alt="NetPixelmon"
+            width={22}
+            height={22}
+            className="object-contain"
+          />
+        </div>
+
+        {/* Tag do Servidor */}
+        <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded bg-[#2B2D31] text-xs text-[#DBDEE1]">
+          <span className="hidden sm:inline text-[#949BA4] text-[11px]">Servidor:</span>
           <span className="font-bold text-[11px] text-[#5865F2] font-mono">{user.server}</span>
         </div>
       </div>
 
       {/* Direita: Staff Online e Botão de Ponto */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2 sm:gap-2.5">
         {/* Dropdown de Staffs em Turno */}
         <div className="relative">
           <button
             onClick={() => setShowDutyDropdown(!showDutyDropdown)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#2B2D31] hover:bg-[#35373C] text-xs text-[#DBDEE1] transition-colors"
+            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-md bg-[#2B2D31] hover:bg-[#35373C] text-xs text-[#DBDEE1] transition-colors"
           >
             <span className="w-2 h-2 rounded-full bg-[#23A55A]" />
             <Users className="w-3.5 h-3.5 text-[#949BA4]" />
-            <span className="font-medium">{onDutyCount} Staffs Online</span>
+            <span className="hidden sm:inline font-medium">{onDutyCount} Staffs Online</span>
+            <span className="sm:hidden font-medium">{onDutyCount}</span>
           </button>
 
           {showDutyDropdown && (
@@ -175,11 +199,11 @@ export function DesktopHeader({ user }: DesktopHeaderProps) {
           )}
         </div>
 
-        {/* Botão de Ponto */}
+        {/* Botão de Ponto Responsivo */}
         <button
           onClick={handleToggleShift}
           disabled={shiftLoading}
-          className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all shadow-sm ${
+          className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all shadow-sm ${
             activeShift
               ? "bg-[#DA373C] hover:bg-[#A12828] text-white"
               : "bg-[#23A55A] hover:bg-[#1F9250] text-white"
@@ -191,13 +215,14 @@ export function DesktopHeader({ user }: DesktopHeaderProps) {
           ) : activeShift ? (
             <>
               <Square className="w-3 h-3 text-white fill-current" />
-              <span className="font-mono font-bold">{formatTime(elapsedSeconds)}</span>
-              <span className="text-[11px] opacity-80">• Encerrar</span>
+              <span className="font-mono font-bold text-[11px] sm:text-xs">{formatTime(elapsedSeconds)}</span>
+              <span className="hidden sm:inline text-[11px] opacity-80">• Encerrar</span>
             </>
           ) : (
             <>
               <Play className="w-3 h-3 text-white fill-current" />
-              <span>Bater Ponto</span>
+              <span className="hidden sm:inline">Bater Ponto</span>
+              <span className="sm:hidden">Ponto</span>
             </>
           )}
         </button>

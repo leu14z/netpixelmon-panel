@@ -15,6 +15,7 @@ import {
   FileText,
   Bug,
   Settings,
+  X,
 } from "lucide-react";
 
 interface DesktopSidebarProps {
@@ -31,6 +32,7 @@ interface DesktopSidebarProps {
 export function DesktopSidebar({ user }: DesktopSidebarProps) {
   const pathname = usePathname();
   const [avatar, setAvatar] = useState<string | null>(user.avatarUrl || null);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     if (user.avatarUrl) setAvatar(user.avatarUrl);
@@ -41,9 +43,23 @@ export function DesktopSidebar({ user }: DesktopSidebarProps) {
       }
     };
 
+    const handleToggleMobile = () => {
+      setMobileOpen((prev) => !prev);
+    };
+
     window.addEventListener("user-updated", handleUserUpdated);
-    return () => window.removeEventListener("user-updated", handleUserUpdated);
+    window.addEventListener("toggle-mobile-sidebar", handleToggleMobile);
+
+    return () => {
+      window.removeEventListener("user-updated", handleUserUpdated);
+      window.removeEventListener("toggle-mobile-sidebar", handleToggleMobile);
+    };
   }, [user.avatarUrl]);
+
+  // Fecha o menu mobile automaticamente ao navegar para outra página
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   const navSections = [
     {
@@ -87,27 +103,40 @@ export function DesktopSidebar({ user }: DesktopSidebarProps) {
     },
   ];
 
-  return (
-    <aside className="w-60 bg-[#2B2D31] border-r border-[#202225] flex flex-col justify-between h-screen sticky top-0 shrink-0 select-none">
+  // Conteúdo compartilhado do menu
+  const SidebarContent = ({ isMobile = false }: { isMobile?: boolean }) => (
+    <div className="flex flex-col justify-between h-full select-none">
       {/* Top Brand com Brasão do Mascote */}
       <div>
-        <div className="h-14 flex items-center px-4 border-b border-[#202225] bg-[#2B2D31] gap-3">
-          <div className="w-8 h-8 rounded-full bg-[#1E1F22] p-1 flex items-center justify-center shrink-0 border border-[#383A40]">
-            <Image
-              src="/mascot.png"
-              alt="NetPixelmon"
-              width={26}
-              height={26}
-              className="object-contain"
-              priority
-            />
+        <div className="h-14 flex items-center justify-between px-4 border-b border-[#202225] bg-[#2B2D31]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-[#1E1F22] p-1 flex items-center justify-center shrink-0 border border-[#383A40]">
+              <Image
+                src="/mascot.png"
+                alt="NetPixelmon"
+                width={26}
+                height={26}
+                className="object-contain"
+                priority
+              />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="font-bold text-xs tracking-tight text-[#F2F3F5] truncate">
+                NetPixelmon
+              </span>
+              <span className="text-[10px] text-[#949BA4] font-medium">Painel da Staff</span>
+            </div>
           </div>
-          <div className="flex flex-col min-w-0">
-            <span className="font-bold text-xs tracking-tight text-[#F2F3F5] truncate">
-              NetPixelmon
-            </span>
-            <span className="text-[10px] text-[#949BA4] font-medium">Painel da Staff</span>
-          </div>
+
+          {isMobile && (
+            <button
+              onClick={() => setMobileOpen(false)}
+              className="p-1.5 text-[#949BA4] hover:text-[#F2F3F5] rounded-md"
+              title="Fechar Menu"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Links de Navegação Agrupados Estilo Discord */}
@@ -126,7 +155,8 @@ export function DesktopSidebar({ user }: DesktopSidebarProps) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center gap-2.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    onClick={() => isMobile && setMobileOpen(false)}
+                    className={`flex items-center gap-2.5 px-2.5 py-2 text-xs font-medium rounded-md transition-colors ${
                       isActive
                         ? "bg-[#35373C] text-[#F2F3F5]"
                         : "text-[#949BA4] hover:text-[#DBDEE1] hover:bg-[#313338]"
@@ -142,10 +172,15 @@ export function DesktopSidebar({ user }: DesktopSidebarProps) {
         </div>
       </div>
 
-      {/* Footer do Usuário Estilo Discord com Avatar Customizado */}
+      {/* Footer do Usuário Estilo Discord */}
       <div className="p-2 border-t border-[#202225] bg-[#232428]">
         <div className="flex items-center justify-between p-1.5 rounded-md hover:bg-[#2B2D31] transition-colors">
-          <Link href="/dashboard/perfil" className="flex items-center gap-2 min-w-0 flex-1" title="Editar Perfil">
+          <Link
+            href="/dashboard/perfil"
+            onClick={() => isMobile && setMobileOpen(false)}
+            className="flex items-center gap-2 min-w-0 flex-1"
+            title="Editar Perfil"
+          >
             <div className="relative w-8 h-8 rounded-full bg-[#5865F2] overflow-hidden flex items-center justify-center text-xs font-bold text-white shrink-0 border border-[#383A40]">
               {avatar ? (
                 <img
@@ -171,6 +206,7 @@ export function DesktopSidebar({ user }: DesktopSidebarProps) {
           <div className="flex items-center gap-0.5">
             <Link
               href="/dashboard/perfil"
+              onClick={() => isMobile && setMobileOpen(false)}
               className="p-1.5 text-[#949BA4] hover:text-white hover:bg-[#313338] rounded-md transition-colors"
               title="Configurações do Perfil"
             >
@@ -183,12 +219,37 @@ export function DesktopSidebar({ user }: DesktopSidebarProps) {
                 className="p-1.5 text-[#949BA4] hover:text-[#DA373C] hover:bg-[#DA373C]/10 rounded-md transition-colors"
                 title="Sair da Conta"
               >
-                <LogOut className="w-3.5 h-3.5" />
+                <LogOut className="w-4 h-4" />
               </button>
             </form>
           </div>
         </div>
       </div>
-    </aside>
+    </div>
+  );
+
+  return (
+    <>
+      {/* 1. Sidebar Fixa em Telas Médias e Grandes (Desktop) */}
+      <aside className="hidden md:flex md:w-60 bg-[#2B2D31] border-r border-[#202225] flex-col justify-between h-screen sticky top-0 shrink-0">
+        <SidebarContent />
+      </aside>
+
+      {/* 2. Gaveta Lateral Mobile (Drawer com Backdrop) */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex">
+          {/* Backdrop Escuro com Blur */}
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
+            onClick={() => setMobileOpen(false)}
+          />
+
+          {/* Gaveta do Menu */}
+          <div className="relative w-64 max-w-[80vw] bg-[#2B2D31] h-full shadow-2xl z-10 flex flex-col justify-between animate-in slide-in-from-left duration-200">
+            <SidebarContent isMobile={true} />
+          </div>
+        </div>
+      )}
+    </>
   );
 }
