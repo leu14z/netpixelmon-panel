@@ -188,6 +188,10 @@ export function AuditoriaClient({ logs }: AuditoriaClientProps) {
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
   const [selectedLog, setSelectedLog] = useState<AuditLogItem | null>(null);
 
+  // Paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(15);
+
   const categories = [
     { id: "ALL", label: "Todos os Eventos" },
     { id: "AUTH", label: "Logins & Acessos" },
@@ -223,6 +227,17 @@ export function AuditoriaClient({ logs }: AuditoriaClientProps) {
       return true;
     });
   }, [logs, search, categoryFilter]);
+
+  // Reseta para página 1 ao pesquisar ou mudar categoria
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, categoryFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / itemsPerPage));
+  const paginatedLogs = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredLogs.slice(start, start + itemsPerPage);
+  }, [filteredLogs, currentPage, itemsPerPage]);
 
   return (
     <div className="space-y-5">
@@ -289,14 +304,14 @@ export function AuditoriaClient({ logs }: AuditoriaClientProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#202225] text-[#DBDEE1]">
-              {filteredLogs.length === 0 ? (
+              {paginatedLogs.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="text-center py-10 text-xs text-[#949BA4]">
                     Nenhum registro encontrado para este filtro ou pesquisa.
                   </td>
                 </tr>
               ) : (
-                filteredLogs.map((log) => {
+                paginatedLogs.map((log) => {
                   const config = ACTION_CONFIG[log.action] || {
                     label: log.action.replace(/_/g, " "),
                     icon: Info,
@@ -370,6 +385,71 @@ export function AuditoriaClient({ logs }: AuditoriaClientProps) {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Rodapé com Paginação Elegante */}
+        <div className="p-3 bg-[#1E1F22] border-t border-[#202225] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#949BA4] select-none">
+          <div className="flex items-center gap-2.5">
+            <span>
+              Mostrando <b className="text-[#F2F3F5]">{filteredLogs.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1}</b> a{" "}
+              <b className="text-[#F2F3F5]">{Math.min(currentPage * itemsPerPage, filteredLogs.length)}</b> de{" "}
+              <b className="text-[#F2F3F5]">{filteredLogs.length}</b> registros
+            </span>
+
+            <div className="flex items-center gap-1.5 ml-2">
+              <span className="text-[11px]">Exibir:</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-[#2B2D31] border border-[#202225] rounded px-1.5 py-0.5 text-xs text-[#DBDEE1] focus:outline-none focus:border-[#5865F2]"
+              >
+                <option value={10}>10</option>
+                <option value={15}>15</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Botões de Navegação de Página */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              className="px-2 py-1 rounded bg-[#2B2D31] hover:bg-[#35373C] text-[#DBDEE1] text-xs font-medium disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              Primeira
+            </button>
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2.5 py-1 rounded bg-[#2B2D31] hover:bg-[#35373C] text-[#DBDEE1] text-xs font-medium disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              Anterior
+            </button>
+
+            <span className="px-2 font-medium text-[#F2F3F5] text-xs">
+              {currentPage} / {totalPages}
+            </span>
+
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+              className="px-2.5 py-1 rounded bg-[#2B2D31] hover:bg-[#35373C] text-[#DBDEE1] text-xs font-medium disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              Próxima
+            </button>
+            <button
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage >= totalPages}
+              className="px-2 py-1 rounded bg-[#2B2D31] hover:bg-[#35373C] text-[#DBDEE1] text-xs font-medium disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              Última
+            </button>
+          </div>
         </div>
       </div>
 
