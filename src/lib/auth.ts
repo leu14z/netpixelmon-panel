@@ -15,6 +15,7 @@ export interface AuthSessionPayload {
   role: Role;
   username: string;
   server: string;
+  avatarUrl?: string | null;
 }
 
 // MATRIZ DE PERMISSÕES RBAC (Hierarquia de Cargos)
@@ -124,6 +125,7 @@ export const getAuthSession = cache(async (): Promise<AuthSessionPayload | null>
       role: dbSession.user.role as Role,
       username: dbSession.user.username,
       server: dbSession.user.server || "GLOBAL",
+      avatarUrl: dbSession.user.avatarUrl || null,
     };
   } catch {
     return null;

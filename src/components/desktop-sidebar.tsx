@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -13,6 +14,7 @@ import {
   Radio,
   FileText,
   Bug,
+  Settings,
 } from "lucide-react";
 
 interface DesktopSidebarProps {
@@ -22,11 +24,26 @@ interface DesktopSidebarProps {
     username: string;
     role: string;
     server: string;
+    avatarUrl?: string | null;
   };
 }
 
 export function DesktopSidebar({ user }: DesktopSidebarProps) {
   const pathname = usePathname();
+  const [avatar, setAvatar] = useState<string | null>(user.avatarUrl || null);
+
+  useEffect(() => {
+    if (user.avatarUrl) setAvatar(user.avatarUrl);
+
+    const handleUserUpdated = (e: any) => {
+      if (e.detail?.avatarUrl !== undefined) {
+        setAvatar(e.detail.avatarUrl || null);
+      }
+    };
+
+    window.addEventListener("user-updated", handleUserUpdated);
+    return () => window.removeEventListener("user-updated", handleUserUpdated);
+  }, [user.avatarUrl]);
 
   const navSections = [
     {
@@ -54,6 +71,12 @@ export function DesktopSidebar({ user }: DesktopSidebarProps) {
       title: "COMUNIDADE",
       items: [
         { href: "/dashboard/influenciadores", label: "Influenciadores & Cupons", icon: Video },
+      ],
+    },
+    {
+      title: "CONFIGURAÇÕES",
+      items: [
+        { href: "/dashboard/perfil", label: "Meu Perfil & Foto", icon: Settings },
       ],
     },
     {
@@ -119,33 +142,51 @@ export function DesktopSidebar({ user }: DesktopSidebarProps) {
         </div>
       </div>
 
-      {/* Footer do Usuário Estilo Discord Voice / User Bar */}
+      {/* Footer do Usuário Estilo Discord com Avatar Customizado */}
       <div className="p-2 border-t border-[#202225] bg-[#232428]">
         <div className="flex items-center justify-between p-1.5 rounded-md hover:bg-[#2B2D31] transition-colors">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="relative w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center text-xs font-bold text-white shrink-0">
-              {user.username.substring(0, 2).toUpperCase()}
+          <Link href="/dashboard/perfil" className="flex items-center gap-2 min-w-0 flex-1" title="Editar Perfil">
+            <div className="relative w-8 h-8 rounded-full bg-[#5865F2] overflow-hidden flex items-center justify-center text-xs font-bold text-white shrink-0 border border-[#383A40]">
+              {avatar ? (
+                <img
+                  src={avatar}
+                  alt={user.username}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                user.username.substring(0, 2).toUpperCase()
+              )}
               <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-[#23A55A] border-2 border-[#232428]" />
             </div>
             <div className="min-w-0 truncate">
-              <div className="font-semibold text-xs text-[#F2F3F5] truncate leading-tight">
+              <div className="font-semibold text-xs text-[#F2F3F5] truncate leading-tight hover:underline">
                 {user.username}
               </div>
               <div className="text-[10px] text-[#949BA4] leading-tight">
                 {user.role} • {user.server}
               </div>
             </div>
-          </div>
+          </Link>
 
-          <form action="/api/auth/logout" method="POST">
-            <button
-              type="submit"
-              className="p-1.5 text-[#949BA4] hover:text-[#DA373C] hover:bg-[#DA373C]/10 rounded-md transition-colors"
-              title="Sair da Conta"
+          <div className="flex items-center gap-0.5">
+            <Link
+              href="/dashboard/perfil"
+              className="p-1.5 text-[#949BA4] hover:text-white hover:bg-[#313338] rounded-md transition-colors"
+              title="Configurações do Perfil"
             >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </form>
+              <Settings className="w-3.5 h-3.5" />
+            </Link>
+
+            <form action="/api/auth/logout" method="POST">
+              <button
+                type="submit"
+                className="p-1.5 text-[#949BA4] hover:text-[#DA373C] hover:bg-[#DA373C]/10 rounded-md transition-colors"
+                title="Sair da Conta"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     </aside>
