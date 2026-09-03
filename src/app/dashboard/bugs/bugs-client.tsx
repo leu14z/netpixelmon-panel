@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Bug, Plus, ExternalLink, Trash2, X } from "lucide-react";
+import { Bug, Plus, ExternalLink, Trash2, X, Eye, Check, Copy } from "lucide-react";
 
 interface BugItem {
   id: string;
@@ -21,6 +21,7 @@ export function BugsClient({ userRole }: { userRole: string }) {
   const [serverFilter, setServerFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [viewingBug, setViewingBug] = useState<BugItem | null>(null);
 
   // Form
   const [title, setTitle] = useState("");
@@ -211,10 +212,23 @@ export function BugsClient({ userRole }: { userRole: string }) {
                     )}
                   </div>
 
-                  <h3 className="font-bold text-sm text-[#F2F3F5]">{b.title}</h3>
-                  <p className="text-xs text-[#DBDEE1] leading-relaxed whitespace-pre-wrap">
+                  <h3
+                    onClick={() => setViewingBug(b)}
+                    className="font-bold text-sm text-[#F2F3F5] hover:text-[#5865F2] cursor-pointer transition-colors"
+                  >
+                    {b.title}
+                  </h3>
+                  <p className="text-xs text-[#DBDEE1] leading-relaxed line-clamp-2">
                     {b.description}
                   </p>
+                  {b.description.length > 100 && (
+                    <button
+                      onClick={() => setViewingBug(b)}
+                      className="text-[11px] text-[#5865F2] hover:underline inline-flex items-center gap-1 font-medium mt-0.5"
+                    >
+                      <Eye className="w-3 h-3" /> Ver Detalhes do Bug
+                    </button>
+                  )}
 
                   <div className="flex items-center gap-3 text-[10px] text-[#949BA4] font-mono">
                     <span>Registrado em {new Date(b.createdAt).toLocaleDateString("pt-BR")}</span>
@@ -398,6 +412,99 @@ export function BugsClient({ userRole }: { userRole: string }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE DETALHES COMPLETOS DO BUG */}
+      {viewingBug && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#2B2D31] border border-[#202225] w-full max-w-xl max-h-[85vh] rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-4 border-b border-[#202225] bg-[#313338] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className={`px-2 py-0.5 rounded text-[10px] ${getPriorityBadge(viewingBug.priority)}`}>
+                  {viewingBug.priority}
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#1E1F22] text-[#DBDEE1]">
+                  {viewingBug.server}
+                </span>
+                <span className="text-[10px] text-[#949BA4]">
+                  {getCategoryLabel(viewingBug.category)}
+                </span>
+              </div>
+              <button
+                onClick={() => setViewingBug(null)}
+                className="p-1 text-[#949BA4] hover:text-white rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-4 flex-1 text-xs">
+              <div>
+                <h2 className="text-base font-bold text-[#F2F3F5] mb-1">{viewingBug.title}</h2>
+                <div className="flex items-center gap-3 text-[11px] text-[#949BA4]">
+                  {viewingBug.reporterNick && (
+                    <span>
+                      Reportado por: <b className="text-[#DBDEE1]">{viewingBug.reporterNick}</b>
+                    </span>
+                  )}
+                  <span>• Registrado em {new Date(viewingBug.createdAt).toLocaleDateString("pt-BR")}</span>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[10px] font-bold uppercase text-[#949BA4] block mb-1">
+                  Descrição e Logs do Problema
+                </span>
+                <div className="p-3.5 bg-[#1E1F22] rounded-lg border border-[#202225] text-xs text-[#DBDEE1] leading-relaxed whitespace-pre-wrap max-h-[40vh] overflow-y-auto font-sans selection:bg-[#5865F2]/30">
+                  {viewingBug.description}
+                </div>
+              </div>
+
+              {viewingBug.proofUrl && (
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-[#949BA4] block mb-1">
+                    Link da Prova / Print
+                  </span>
+                  <a
+                    href={viewingBug.proofUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#1E1F22] hover:bg-[#35373C] text-[#5865F2] hover:underline rounded border border-[#202225] break-all"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                    <span>Abrir Prova Anexada</span>
+                  </a>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 border-t border-[#202225] bg-[#313338] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-[#949BA4]">Status:</span>
+                <select
+                  value={viewingBug.status}
+                  onChange={(e) => {
+                    handleUpdateStatus(viewingBug.id, e.target.value);
+                    setViewingBug({ ...viewingBug, status: e.target.value });
+                  }}
+                  className="bg-[#1E1F22] border border-[#383A40] text-xs text-[#F2F3F5] rounded px-2.5 py-1 focus:outline-none focus:border-[#5865F2]"
+                >
+                  <option value="RECEBIDO">Recebido</option>
+                  <option value="INVESTIGANDO">Em Investigação</option>
+                  <option value="CORRIGIDO">Corrigido</option>
+                  <option value="DESCARTADO">Descartado</option>
+                </select>
+              </div>
+
+              <button
+                onClick={() => setViewingBug(null)}
+                className="px-4 py-1.5 bg-[#4E5058] hover:bg-[#6D6F78] text-white rounded-md text-xs font-semibold transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}

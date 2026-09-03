@@ -1,7 +1,19 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { FileText, Plus, Trash2, Pin, X, BookOpen } from "lucide-react";
+import {
+  FileText,
+  Plus,
+  Trash2,
+  Pin,
+  X,
+  BookOpen,
+  Eye,
+  Copy,
+  Check,
+  Calendar,
+  User,
+} from "lucide-react";
 
 interface Note {
   id: string;
@@ -18,6 +30,8 @@ export function NotesClient({ userRole, username }: { userRole: string; username
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [viewingNote, setViewingNote] = useState<Note | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Form
   const [title, setTitle] = useState("");
@@ -67,6 +81,7 @@ export function NotesClient({ userRole, username }: { userRole: string; username
   const handleDeleteNote = async (id: string, noteTitle: string) => {
     if (!confirm(`Deseja excluir a anotação "${noteTitle}"?`)) return;
     await fetch(`/api/notes?id=${id}`, { method: "DELETE" });
+    if (viewingNote?.id === id) setViewingNote(null);
     loadNotes();
   };
 
@@ -142,7 +157,7 @@ export function NotesClient({ userRole, username }: { userRole: string; username
         ))}
       </div>
 
-      {/* Grid de Notas */}
+      {/* Grid de Notas com Altura Fixa Elegante */}
       {notes.length === 0 ? (
         <div className="p-12 text-center text-xs text-[#949BA4] bg-[#2B2D31] rounded-lg">
           Nenhuma anotação cadastrada nesta categoria.
@@ -152,10 +167,11 @@ export function NotesClient({ userRole, username }: { userRole: string; username
           {notes.map((note) => (
             <div
               key={note.id}
-              className={`p-4 rounded-lg bg-[#2B2D31] border flex flex-col justify-between space-y-3 transition-colors ${
+              className={`p-4 rounded-lg bg-[#2B2D31] border flex flex-col justify-between h-[270px] transition-all hover:border-[#383A40] ${
                 note.pinned ? "border-[#5865F2]/50 shadow-md" : "border-[#202225]"
               }`}
             >
+              {/* Topo do Card */}
               <div>
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${getCategoryBadge(note.category)}`}>
@@ -165,8 +181,11 @@ export function NotesClient({ userRole, username }: { userRole: string; username
                     {note.pinned && <Pin className="w-3.5 h-3.5 text-[#5865F2]" />}
                     {(isLeader || note.authorName === username) && (
                       <button
-                        onClick={() => handleDeleteNote(note.id, note.title)}
-                        className="text-[#949BA4] hover:text-[#DA373C] p-1 rounded"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteNote(note.id, note.title);
+                        }}
+                        className="text-[#949BA4] hover:text-[#DA373C] p-1 rounded transition-colors"
                         title="Excluir Anotação"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -175,18 +194,123 @@ export function NotesClient({ userRole, username }: { userRole: string; username
                   </div>
                 </div>
 
-                <h3 className="font-bold text-sm text-[#F2F3F5] mb-1.5">{note.title}</h3>
-                <p className="text-xs text-[#DBDEE1] whitespace-pre-wrap leading-relaxed">
-                  {note.content}
-                </p>
+                <h3 className="font-bold text-sm text-[#F2F3F5] truncate mb-1.5" title={note.title}>
+                  {note.title}
+                </h3>
+
+                {/* Prévia do Conteúdo com Máscara de Fade */}
+                <div className="relative max-h-[110px] overflow-hidden text-xs text-[#DBDEE1] leading-relaxed">
+                  <p className="whitespace-pre-wrap line-clamp-4">{note.content}</p>
+                  <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-[#2B2D31] via-[#2B2D31]/80 to-transparent pointer-events-none" />
+                </div>
               </div>
 
-              <div className="pt-2 border-t border-[#202225] flex items-center justify-between text-[10px] text-[#949BA4]">
-                <span>Por {note.authorName}</span>
-                <span>{new Date(note.createdAt).toLocaleDateString("pt-BR")}</span>
+              {/* Ações do Card */}
+              <div className="space-y-2.5 pt-2 border-t border-[#202225]">
+                <button
+                  onClick={() => setViewingNote(note)}
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-[#313338] hover:bg-[#35373C] text-[#DBDEE1] hover:text-white rounded text-xs font-semibold border border-[#202225] transition-colors"
+                >
+                  <Eye className="w-3.5 h-3.5 text-[#5865F2]" />
+                  <span>Abrir para Visualizar</span>
+                </button>
+
+                <div className="flex items-center justify-between text-[10px] text-[#949BA4]">
+                  <span className="truncate">Por {note.authorName}</span>
+                  <span>{new Date(note.createdAt).toLocaleDateString("pt-BR")}</span>
+                </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* MODAL DE LEITURA COMPLETA (Focado e Centralizado) */}
+      {viewingNote && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#2B2D31] border border-[#202225] w-full max-w-2xl max-h-[85vh] rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Header da Leitura */}
+            <div className="p-4 border-b border-[#202225] bg-[#313338] flex items-center justify-between">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${getCategoryBadge(viewingNote.category)}`}>
+                  {getCategoryLabel(viewingNote.category)}
+                </span>
+                {viewingNote.pinned && (
+                  <span className="flex items-center gap-1 text-[10px] text-[#5865F2] font-semibold bg-[#5865F2]/15 px-2 py-0.5 rounded border border-[#5865F2]/30">
+                    <Pin className="w-3 h-3" /> Fixado
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(viewingNote.content);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-[#1E1F22] hover:bg-[#35373C] text-[#DBDEE1] hover:text-white rounded text-[11px] border border-[#202225] transition-colors"
+                >
+                  {copied ? <Check className="w-3 h-3 text-[#23A55A]" /> : <Copy className="w-3 h-3" />}
+                  <span>{copied ? "Copiado!" : "Copiar Texto"}</span>
+                </button>
+
+                <button
+                  onClick={() => setViewingNote(null)}
+                  className="p-1 text-[#949BA4] hover:text-white rounded"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Conteúdo com Scroll Interno Limpo */}
+            <div className="p-5 overflow-y-auto space-y-4 flex-1">
+              <div>
+                <h2 className="text-base font-bold text-[#F2F3F5] mb-1 leading-snug">{viewingNote.title}</h2>
+                <div className="flex items-center gap-2 text-[11px] text-[#949BA4]">
+                  <span>Publicado por <b className="text-[#DBDEE1]">{viewingNote.authorName}</b></span>
+                  <span>•</span>
+                  <span>
+                    {new Date(viewingNote.createdAt).toLocaleDateString("pt-BR", {
+                      day: "2-digit",
+                      month: "long",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Caixa com o Texto Completo */}
+              <div className="p-4 bg-[#1E1F22] rounded-lg border border-[#202225] text-xs text-[#DBDEE1] leading-relaxed whitespace-pre-wrap font-sans selection:bg-[#5865F2]/30 max-h-[50vh] overflow-y-auto">
+                {viewingNote.content}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 border-t border-[#202225] bg-[#313338] flex items-center justify-between">
+              <div>
+                {(isLeader || viewingNote.authorName === username) && (
+                  <button
+                    onClick={() => handleDeleteNote(viewingNote.id, viewingNote.title)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs text-[#DA373C] hover:bg-[#DA373C]/10 rounded transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Excluir Anotação</span>
+                  </button>
+                )}
+              </div>
+
+              <button
+                onClick={() => setViewingNote(null)}
+                className="px-4 py-1.5 bg-[#4E5058] hover:bg-[#6D6F78] text-white rounded-md text-xs font-semibold transition-colors"
+              >
+                Fechar Visualização
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -239,50 +363,49 @@ export function NotesClient({ userRole, username }: { userRole: string; username
                   </select>
                 </div>
 
-                <div className="flex items-end pb-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={pinned}
-                      onChange={(e) => setPinned(e.target.checked)}
-                      className="rounded bg-[#1E1F22] border-[#202225] text-[#5865F2] focus:ring-0"
-                    />
-                    <span className="text-xs text-[#DBDEE1] flex items-center gap-1">
-                      <Pin className="w-3.5 h-3.5 text-[#5865F2]" />
-                      Fixar no topo
-                    </span>
+                <div className="flex items-center gap-2 pt-5">
+                  <input
+                    type="checkbox"
+                    id="pinned"
+                    checked={pinned}
+                    onChange={(e) => setPinned(e.target.checked)}
+                    className="w-4 h-4 rounded bg-[#1E1F22] border-[#202225] text-[#5865F2] focus:ring-0"
+                  />
+                  <label htmlFor="pinned" className="text-xs text-[#DBDEE1] select-none cursor-pointer flex items-center gap-1">
+                    <Pin className="w-3 h-3 text-[#5865F2]" />
+                    Fixar no topo
                   </label>
                 </div>
               </div>
 
               <div>
                 <label className="block text-[11px] font-semibold text-[#DBDEE1] mb-1">
-                  Conteúdo / Descrição Detalhada
+                  Conteúdo da Anotação (Markdown ou Texto)
                 </label>
                 <textarea
-                  rows={6}
                   required
+                  rows={6}
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
-                  placeholder="Escreva as regras, decisões tomadas ou links úteis..."
-                  className="w-full bg-[#1E1F22] border border-[#202225] rounded-md p-2.5 text-[#F2F3F5] placeholder-[#949BA4] focus:outline-none focus:border-[#5865F2]"
+                  placeholder="Descreva detalhadamente o regulamento, atas, comandos ou aviso..."
+                  className="w-full bg-[#1E1F22] border border-[#202225] rounded-md p-2.5 text-[#F2F3F5] placeholder-[#949BA4] focus:outline-none focus:border-[#5865F2] leading-relaxed resize-none"
                 />
               </div>
 
-              <div className="pt-2 flex items-center justify-end gap-2 border-t border-[#202225]">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#202225]">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-3 py-2 text-[#DBDEE1] hover:text-white"
+                  className="px-4 py-2 bg-[#2B2D31] hover:bg-[#35373C] text-[#DBDEE1] rounded-md text-xs font-semibold transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-4 py-2 bg-[#5865F2] hover:bg-[#4752C4] text-white font-semibold rounded-md shadow-sm"
+                  className="px-4 py-2 bg-[#5865F2] hover:bg-[#4752C4] text-white rounded-md text-xs font-semibold shadow-sm transition-colors disabled:opacity-50"
                 >
-                  Salvar Anotação
+                  {loading ? "Salvando..." : "Publicar Anotação"}
                 </button>
               </div>
             </form>
