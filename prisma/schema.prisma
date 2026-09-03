@@ -1,0 +1,233 @@
+// Prisma Schema para o Painel NetPixelmon Staff
+// Suporta SQLite (dev) e PostgreSQL (prod com RLS)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                 String         @id @default(uuid())
+  username           String         @unique
+  email              String         @unique
+  passwordHash       String         // Hash seguro via Argon2id
+  role               String         @default("HELPER") // OWNER, ADMIN, MODERATOR, HELPER
+  server             String         @default("GLOBAL") // CYAN, ORANGE, GLOBAL
+  mustChangePassword Boolean        @default(false)
+  discordId          String?        @unique
+  avatarUrl          String?
+  isActive           Boolean        @default(true)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  sessions           Session[]
+  auditLogs          AuditLog[]     @relation("ActorLogs")
+  punishments        Punishment[]   @relation("StaffPunishments")
+  leaveRequests      LeaveRequest[]
+  workShifts         WorkShift[]
+  warningsReceived   Warning[]      @relation("UserWarnings")
+  warningsGiven      Warning[]      @relation("StaffWarnings")
+  supportRooms       SupportRoom[]
+
+  @@index([role])
+  @@index([server])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String
+  userAgent String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+model LeaveRequest {
+  id           String    @id @default(uuid())
+  userId       String
+  startDate    DateTime
+  endDate      DateTime
+  reason       String
+  status       String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNotes  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+model WorkShift {
+  id              String    @id @default(uuid())
+  userId          String
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+  durationMinutes Int?
+  server          String    @default("GLOBAL")
+  notes           String?
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([startedAt])
+}
+
+model Warning {
+  id        String   @id @default(uuid())
+  userId    String   // Membro punido
+  staffId   String   // Líder que aplicou
+  severity  String   // VERBAL, WARN_1, WARN_2, REMOVAL
+  reason    String
+  proofUrl  String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  user      User     @relation("UserWarnings", fields: [userId], references: [id], onDelete: Cascade)
+  staff     User     @relation("StaffWarnings", fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([staffId])
+}
+
+model SupportRoom {
+  id          String    @id @default(uuid())
+  code        String    @unique // Código curto: ex "px-8492"
+  staffId     String
+  playerNick  String
+  status      String    @default("ACTIVE") // ACTIVE, CLOSED
+  category    String    @default("LAUNCHER_ERROR")
+  notes       String?
+  startedAt   DateTime  @default(now())
+  closedAt    DateTime?
+
+  staff       User      @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([code])
+  @@index([staffId])
+  @@index([status])
+}
+
+model Influencer {
+  id               String   @id @default(uuid())
+  name             String
+  channelUrl       String
+  platform         String   // YOUTUBE, TWITCH, TIKTOK, KICK
+  couponCode       String   @unique
+  subscribersCount Int      @default(0)
+  status           String   @default("ACTIVE") // ACTIVE, IN_TEST, PAUSED
+  monthlyReward    String?  // ex: "1500 Coins + 2 Pokémons Paradox"
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([platform])
+  @@index([status])
+}
+
+model ContentIdea {
+  id           String   @id @default(uuid())
+  title        String
+  description  String
+  targetServer String   @default("GLOBAL") // CYAN, ORANGE, GLOBAL
+  status       String   @default("SUGGESTED") // SUGGESTED, RECORDING, PUBLISHED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status])
+  @@index([targetServer])
+}
+
+model StaffNote {
+  id         String   @id @default(uuid())
+  title      String
+  content    String
+  category   String   @default("GERAL") // REGULAMENTO, ATA_REUNIAO, AVISO, GERAL
+  authorId   String
+  authorName String
+  pinned     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([category])
+  @@index([pinned])
+}
+
+model BugReport {
+  id           String   @id @default(uuid())
+  title        String
+  description  String
+  category     String   @default("OUTRO") // LAUNCHER, BATALHA, DUPE_ECONOMIA, CRASH, OUTRO
+  server       String   @default("GLOBAL") // CYAN, ORANGE, GLOBAL
+  priority     String   @default("MEDIA") // BAIXA, MEDIA, CRITICA
+  status       String   @default("RECEBIDO") // RECEBIDO, INVESTIGANDO, CORRIGIDO, DESCARTADO
+  reporterNick String?
+  proofUrl     String?
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status])
+  @@index([server])
+  @@index([priority])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String
+  action    String   // ex: "STAFF_CREATE", "PUNISHMENT_CREATE", "LEAVE_APPROVE"
+  target    String?  // ex: UUID do recurso ou usuário afetado
+  details   String?  // JSON descritivo
+  ipAddress String
+  createdAt DateTime @default(now())
+
+  actor     User     @relation("ActorLogs", fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([actorId])
+  @@index([action])
+}
+
+model Punishment {
+  id          String    @id @default(uuid())
+  staffId     String
+  playerUuid  String
+  playerName  String
+  type        String    // BAN, MUTE, KICK, WARN
+  reason      String
+  proofUrl    String?
+  active      Boolean   @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  staff       User      @relation("StaffPunishments", fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([playerUuid])
+  @@index([staffId])
+}
+
+model PublicKey {
+  id           String   @id @default(uuid())
+  entityId     String   @unique
+  keyName      String
+  publicKeyPem String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([entityId])
+}

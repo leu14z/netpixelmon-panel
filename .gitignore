@@ -1,41 +1,42 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
+# Dependencies
 /node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+/.pnpm
+/.yarn
 
-# testing
-/coverage
-
-# next.js
+# Build & Output
 /.next/
 /out/
-
-# production
 /build
+/dist
 
-# misc
-.DS_Store
+# Environment variables & secrets (CRITICAL FOR GIT CLEANUP)
+.env
+.env*.local
+.env.development.local
+.env.test.local
+.env.production.local
 *.pem
+*.key
+*.cert
+*.pfx
 
-# debug
+# SQLite Databases / Dev DBs
+*.db
+*.db-journal
+
+# Logs & Debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/
+*.suo
+*.user
 
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# Prisma
+/prisma/*.db
+/prisma/*.db-journal
